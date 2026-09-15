@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EchoTag — LoRa Search & Rescue Localization</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0a100d;
+    --bg-grid: #0d1712;
+    --panel: #111c16;
+    --panel-2: #0d1611;
+    --border: #223129;
+    --border-bright: #2f4536;
+    --text: #e6ede8;
+    --text-dim: #7f9488;
+    --text-faint: #4d5f54;
+    --green: #3ee08a;
+    --green-dim: #1f5a3e;
+    --amber: #e8a63d;
+    --red: #ff5c4d;
+    --blue: #5b9df0;
+    --mono: 'JetBrains Mono', monospace;
+    --disp: 'Rajdhani', sans-serif;
+    --body: 'Inter', sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { color-scheme: dark; }
+
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse 900px 500px at 20% -10%, rgba(62,224,138,0.06), transparent),
+      var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+
+  :focus-visible{
+    outline: 2px solid var(--green);
+    outline-offset: 2px;
+  }
+
+  .wrap{
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
+
+  /* ---------- HEADER ---------- */
+  header{
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--bg);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 16px;
+    padding: 22px 24px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap: 12px;
+  }
+  .brand h1{
+    font-family: var(--disp);
+    font-weight: 700;
+    font-size: 26px;
+    letter-spacing: 0.5px;
+    margin:0;
+  }
+  .brand span{
+    color: var(--text-dim);
+    font-size: 13px;
+    font-family: var(--mono);
+  }
+  .status-cluster{
+    display:flex;
+    align-items:center;
+    gap: 22px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  .status-item{ display:flex; align-items:center; gap:7px; }
+  .dot{
+    width:8px; height:8px; border-radius:50%;
+    background: var(--green);
+    box-shadow: 0 0 0 3px rgba(62,224,138,0.15);
+  }
+  .dot.pulse{ animation: pulse 2.2s ease-in-out infinite; }
+  @keyframes pulse{
+    0%,100%{ box-shadow: 0 0 0 3px rgba(62,224,138,0.15); }
+    50%{ box-shadow: 0 0 0 6px rgba(62,224,138,0.05); }
+  }
+
+  /* ---------- MAIN GRID ---------- */
+  main{ padding-top: 28px; }
+
+  .console{
+    display:grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 18px;
+  }
+
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+  .panel-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-head h2{
+    font-family: var(--disp);
+    font-weight: 600;
+    font-size: 16px;
+    margin:0;
+    letter-spacing: 0.3px;
+  }
+  .panel-head .sub{
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-faint);
+  }
+
+  /* ---------- MAP ---------- */
+  .map-shell{ padding: 18px; }
+  .map-box{
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: var(--bg-grid);
+    border: 1px solid var(--border-bright);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .map-box svg{ position:absolute; inset:0; width:100%; height:100%; }
+
+  .axis-label{
+    position:absolute;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .col-labels span, .row-labels span{
+    position:absolute;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .sweep{
+    position:absolute;
+    top:50%; left:50%;
+    width:70%; height:70%;
+    margin-top:-35%; margin-left:-35%;
+    border-radius:50%;
+    background: conic-gradient(from 0deg, rgba(62,224,138,0.22), transparent 28%);
+    animation: spin 5s linear infinite;
+    mix-blend-mode: screen;
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+
+  .node-marker{
+    position:absolute;
+    width: 14px; height:14px;
+    transform: translate(-50%,-50%);
+  }
+  .node-marker .core{
+    width:10px; height:10px;
+    border-radius:50%;
+    margin: 2px;
+  }
+  .node-marker .ring{
+    position:absolute; inset:0;
+    border-radius:50%;
+    animation: ringpulse 2.6s ease-out infinite;
+  }
+  @keyframes ringpulse{
+    0%{ box-shadow: 0 0 0 0 currentColor; opacity:0.6; }
+    100%{ box-shadow: 0 0 0 14px currentColor; opacity:0; }
+  }
+  .node-tag{
+    position:absolute;
+    top: 16px; left:50%;
+    transform: translateX(-50%);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+    white-space:nowrap;
+  }
+
+  .victim-marker{
+    position:absolute;
+    left:50%; top:50%;
+    width:18px; height:18px;
+    transform: translate(-50%,-50%);
+  }
+  .victim-marker .core{
+    width:100%; height:100%;
+    border-radius:50%;
+    background: var(--red);
+    box-shadow: 0 0 0 4px rgba(255,92,77,0.18);
+  }
+  .victim-marker .core.blink{ animation: blink 1.1s ease-in-out infinite; }
+  @keyframes blink{ 0%,100%{ opacity:1;} 50%{opacity:0.35;} }
+
+  .trilines path{
+    stroke: var(--green);
+    stroke-width: 0.6;
+    fill:none;
+    stroke-dasharray: 4 3;
+    opacity: 0;
+  }
+  .trilines.active path{
+    opacity: 0.55;
+    animation: dash 1.2s linear infinite;
+  }
+  @keyframes dash{ to{ stroke-dashoffset: -14; } }
+
+  .map-footline{
+    display:flex;
+    justify-content:space-between;
+    padding: 12px 18px 4px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-faint);
+  }
+
+  /* ---------- LOCATE RESULT BAR ---------- */
+  .result-bar{
+    display:flex;
+    align-items:center;
+    gap: 22px;
+    padding: 16px 18px;
+    border-top: 1px solid var(--border);
+    flex-wrap:wrap;
+  }
+  .result-field{ display:flex; flex-direction:column; gap:2px; }
+  .result-field .k{
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-faint);
+  }
+  .result-field .v{
+    font-family: var(--disp);
+    font-weight: 700;
+    font-size: 20px;
+  }
+  .result-field .v.zone{ color: var(--green); }
+  .locate-btn{
+    margin-left: auto;
+    background: var(--green);
+    color: #06130c;
+    border: none;
+    font-family: var(--disp);
+    font-weight: 700;
+    font-size: 14.5px;
+    letter-spacing: 0.3px;
+    padding: 11px 22px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .locate-btn:hover{ background:#4ff09b; }
+  .locate-btn:active{ transform: scale(0.97); }
+  .locate-btn[disabled]{
+    background: var(--border-bright);
+    color: var(--text-dim);
+    cursor: progress;
+  }
+
+  /* ---------- NODE LIST ---------- */
+  .node-list{ padding: 6px 0; max-height: 264px; overflow-y: auto; }
+  .node-list::-webkit-scrollbar{ width: 6px; }
+  .node-list::-webkit-scrollbar-thumb{ background: var(--border-bright); border-radius: 3px; }
+  .node-row{
+    display:grid;
+    grid-template-columns: 26px 1fr auto auto;
+    align-items:center;
+    gap: 12px;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .node-row:last-child{ border-bottom:none; }
+  .node-dot{ width:9px; height:9px; border-radius:50%; }
+  .node-name{ font-family: var(--disp); font-weight:600; font-size: 14.5px; }
+  .node-name small{
+    display:block;
+    font-family: var(--mono);
+    font-weight: 400;
+    font-size: 10.5px;
+    color: var(--text-faint);
+  }
+  .signal-bars{ display:flex; align-items:flex-end; gap:2.5px; height: 16px; }
+  .signal-bars i{
+    display:block;
+    width: 4px;
+    background: var(--border-bright);
+    border-radius: 1px;
+  }
+  .signal-bars i:nth-child(1){ height: 25%; }
+  .signal-bars i:nth-child(2){ height: 50%; }
+  .signal-bars i:nth-child(3){ height: 75%; }
+  .signal-bars i:nth-child(4){ height: 100%; }
+  .signal-bars.lvl-1 i:nth-child(-n+1){ background: var(--red); }
+  .signal-bars.lvl-2 i:nth-child(-n+2){ background: var(--amber); }
+  .signal-bars.lvl-3 i:nth-child(-n+3){ background: var(--green); }
+  .signal-bars.lvl-4 i:nth-child(-n+4){ background: var(--green); }
+  .node-meta{
+    text-align:right;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .node-meta .rssi{ color: var(--text); }
+
+  /* ---------- LOG ---------- */
+  .log-panel{ margin-top: 18px; }
+  .log-body{
+    height: 168px;
+    overflow-y: auto;
+    padding: 10px 18px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+  }
+  .log-line{
+    display:flex;
+    gap: 12px;
+    padding: 5px 0;
+    color: var(--text-dim);
+    border-bottom: 1px dashed rgba(255,255,255,0.03);
+  }
+  .log-line .t{ color: var(--text-faint); flex-shrink:0; }
+  .log-line .tag{ flex-shrink:0; width: 58px; }
+  .log-line .tag.ok{ color: var(--green); }
+  .log-line .tag.warn{ color: var(--amber); }
+  .log-line .tag.crit{ color: var(--red); }
+  .log-body::-webkit-scrollbar{ width: 6px; }
+  .log-body::-webkit-scrollbar-thumb{ background: var(--border-bright); border-radius: 3px; }
+
+  /* ---------- NETWORK / RADIO GRID ---------- */
+  .net-scroll{
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .net-scroll::-webkit-scrollbar{ width: 6px; }
+  .net-scroll::-webkit-scrollbar-thumb{ background: var(--border-bright); border-radius: 3px; }
+  .net-grid{
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border-top: 1px solid var(--border);
+  }
+  .net-item{
+    background: var(--panel);
+    padding: 13px 16px;
+    display:flex;
+    flex-direction:column;
+    gap: 4px;
+  }
+  .net-item .k{
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-faint);
+  }
+  .net-item .v{
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    word-break: break-word;
+  }
+  .net-note{
+    margin: 0;
+    padding: 12px 18px 16px;
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+  @media (max-width: 860px){
+    .net-grid{ grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ---------- LOWER GRID: HOW IT WORKS + FEATURES ---------- */
+  .lower{
+    margin-top: 18px;
+    display:grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 18px;
+  }
+
+  .steps{ padding: 20px 22px; display:flex; flex-direction:column; gap: 18px; }
+  .step{ display:flex; gap: 16px; }
+  .step .num{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--green);
+    border: 1px solid var(--green-dim);
+    border-radius: 50%;
+    width: 26px; height:26px;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .step h3{
+    font-family: var(--disp);
+    font-weight: 600;
+    font-size: 15.5px;
+    margin: 0 0 4px;
+  }
+  .step p{
+    margin:0;
+    font-size: 13.5px;
+    color: var(--text-dim);
+    max-width: 46ch;
+  }
+
+  .features{ padding: 20px 22px; }
+  .features ul{ list-style:none; margin:0; padding:0; }
+  .features li{
+    display:flex;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13.5px;
+    color: var(--text-dim);
+  }
+  .features li:last-child{ border-bottom:none; }
+  .features li::before{
+    content:'';
+    width: 6px; height:6px;
+    margin-top: 6px;
+    background: var(--green);
+    flex-shrink:0;
+  }
+  .features li b{ color: var(--text); font-weight: 500; }
+
+  /* ---------- FOOTER ---------- */
+  footer{
+    margin-top: 30px;
+    padding: 22px 24px 0;
+    border-top: 1px solid var(--border);
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap: 10px;
+  }
+  footer .tagline{
+    font-family: var(--disp);
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--text-dim);
+  }
+  footer .meta{
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  @media (max-width: 860px){
+    .console, .lower{ grid-template-columns: 1fr; }
+    header{ padding: 18px; }
+    .wrap{ padding: 0 16px 60px; }
+    .result-bar{ gap: 16px; }
+    .locate-btn{ margin-left:0; width:100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .dot.pulse, .sweep, .node-marker .ring, .victim-marker .core.blink, .trilines.active path{
+      animation: none !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>EchoTag</h1>
+    <span>LoRa Search-and-Rescue Localization Network</span>
+  </div>
+  <div class="status-cluster">
+    <div class="status-item"><span class="dot pulse"></span> MESH LIVE</div>
+    <div class="status-item">4 NODES</div>
+    <div class="status-item">915MHz LoRa</div>
+    <div class="status-item" id="uptime">UPTIME 00:00:00</div>
+  </div>
+</header>
+
+<div class="wrap">
+  <main>
+
+    <section class="console">
+
+      <!-- MAP PANEL -->
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Field Grid — Sector 4</h2>
+          <span class="sub">RSSI TRIANGULATION</span>
+        </div>
+        <div class="map-shell">
+          <div class="map-box" id="mapBox">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+              <line x1="33.3" y1="0" x2="33.3" y2="100" stroke="#1b2b22" stroke-width="0.4"/>
+              <line x1="66.6" y1="0" x2="66.6" y2="100" stroke="#1b2b22" stroke-width="0.4"/>
+              <line x1="0" y1="33.3" x2="100" y2="33.3" stroke="#1b2b22" stroke-width="0.4"/>
+              <line x1="0" y1="66.6" x2="100" y2="66.6" stroke="#1b2b22" stroke-width="0.4"/>
+              <g class="trilines" id="trilines">
+                <path d="M8,8 L50,50"/>
+                <path d="M92,8 L50,50"/>
+                <path d="M8,92 L50,50"/>
+                <path d="M92,92 L50,50"/>
+              </g>
+            </svg>
+
+            <div class="sweep"></div>
+
+            <span class="axis-label" style="left:14%; top:3%;">A</span>
+            <span class="axis-label" style="left:47.5%; top:3%;">B</span>
+            <span class="axis-label" style="left:81%; top:3%;">C</span>
+            <span class="axis-label" style="left:1.5%; top:14%;">1</span>
+            <span class="axis-label" style="left:1.5%; top:47.5%;">2</span>
+            <span class="axis-label" style="left:1.5%; top:81%;">3</span>
+
+            <div class="node-marker" style="left:8%; top:8%;">
+              <div class="ring" style="color: var(--amber);"></div>
+              <div class="core" style="background: var(--amber);"></div>
+              <div class="node-tag">N3 · weak</div>
+            </div>
+            <div class="node-marker" style="left:92%; top:8%;">
+              <div class="ring" style="color: var(--green);"></div>
+              <div class="core" style="background: var(--green);"></div>
+              <div class="node-tag">N4 · medium</div>
+            </div>
+            <div class="node-marker" style="left:8%; top:92%;">
+              <div class="ring" style="color: var(--green);"></div>
+              <div class="core" style="background: var(--green);"></div>
+              <div class="node-tag">N1 · medium</div>
+            </div>
+            <div class="node-marker" style="left:92%; top:92%;">
+              <div class="ring" style="color: var(--green);"></div>
+              <div class="core" style="background: var(--green);"></div>
+              <div class="node-tag">N2 · strong</div>
+            </div>
+
+            <div class="victim-marker">
+              <div class="core blink"></div>
+            </div>
+          </div>
+          <div class="map-footline">
+            <span>4 beacon nodes deployed</span>
+            <span id="scanClock">last scan · 0.4s ago</span>
+          </div>
+        </div>
+
+        <div class="result-bar">
+          <div class="result-field">
+            <span class="k">ESTIMATED LOCATION</span>
+            <span class="v zone" id="zoneOut">ZONE B2</span>
+          </div>
+          <div class="result-field">
+            <span class="k">CONFIDENCE</span>
+            <span class="v" id="confOut">87%</span>
+          </div>
+          <div class="result-field">
+            <span class="k">GPS ESTIMATE</span>
+            <span class="v" id="gpsOut" style="font-size:15px; font-family:var(--mono);">34.0522°N, 118.2437°W</span>
+          </div>
+          <div class="result-field">
+            <span class="k">SOURCE</span>
+            <span class="v" style="font-size:14px; color:var(--text-dim); font-family:var(--mono); font-weight:400;">Victim transmitter</span>
+          </div>
+          <button class="locate-btn" id="locateBtn">Locate victim</button>
+        </div>
+      </div>
+
+      <!-- NODE PANEL -->
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Node Status</h2>
+          <span class="sub">RSSI / dBm</span>
+        </div>
+        <div class="node-list" id="nodeList">
+          <div class="node-row">
+            <span class="node-dot" style="background: var(--green);"></span>
+            <span class="node-name">Node 1<small>SW corner</small></span>
+            <span class="signal-bars lvl-3"><i></i><i></i><i></i><i></i></span>
+            <span class="node-meta"><span class="rssi">-71 dBm</span> · SNR 8.1dB<br>0x4F2A · batt 88%</span>
+          </div>
+          <div class="node-row">
+            <span class="node-dot" style="background: var(--green);"></span>
+            <span class="node-name">Node 2<small>SE corner</small></span>
+            <span class="signal-bars lvl-4"><i></i><i></i><i></i><i></i></span>
+            <span class="node-meta"><span class="rssi">-58 dBm</span> · SNR 11.6dB<br>0x9B03 · batt 94%</span>
+          </div>
+          <div class="node-row">
+            <span class="node-dot" style="background: var(--amber);"></span>
+            <span class="node-name">Node 3<small>NW corner</small></span>
+            <span class="signal-bars lvl-1"><i></i><i></i><i></i><i></i></span>
+            <span class="node-meta"><span class="rssi">-93 dBm</span> · SNR 2.4dB<br>0x1C77 · batt 61%</span>
+          </div>
+          <div class="node-row">
+            <span class="node-dot" style="background: var(--green);"></span>
+            <span class="node-name">Node 4<small>NE corner</small></span>
+            <span class="signal-bars lvl-3"><i></i><i></i><i></i><i></i></span>
+            <span class="node-meta"><span class="rssi">-74 dBm</span> · SNR 7.3dB<br>0xE861 · batt 79%</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- NETWORK / RADIO INFO -->
+    <section class="panel log-panel">
+      <div class="panel-head">
+        <h2>Network &amp; Radio</h2>
+        <span class="sub">GATEWAY DIAGNOSTICS</span>
+      </div>
+      <div class="net-scroll">
+      <div class="net-grid">
+        <div class="net-item"><span class="k">Gateway IP</span><span class="v">192.168.4.1</span></div>
+        <div class="net-item"><span class="k">Mesh ID</span><span class="v">ECHOTAG-M4F2</span></div>
+        <div class="net-item"><span class="k">Radio</span><span class="v">SX1262 · LoRa</span></div>
+        <div class="net-item"><span class="k">Frequency band</span><span class="v">902–928 MHz</span></div>
+        <div class="net-item"><span class="k">Channel</span><span class="v">CH14 · 915.2 MHz</span></div>
+        <div class="net-item"><span class="k">Spreading factor</span><span class="v">SF9</span></div>
+        <div class="net-item"><span class="k">Bandwidth</span><span class="v">125 kHz</span></div>
+        <div class="net-item"><span class="k">TX power</span><span class="v">17 dBm</span></div>
+        <div class="net-item"><span class="k">Nodes online</span><span class="v">4 / 4</span></div>
+        <div class="net-item"><span class="k">Packet loss (5m)</span><span class="v" id="packetLoss">2.1%</span></div>
+        <div class="net-item"><span class="k">Uplink</span><span class="v">Local mesh only — no WAN</span></div>
+        <div class="net-item"><span class="k">Admin access</span><span class="v">http://192.168.4.1/admin</span></div>
+      </div>
+      </div>
+      <p class="net-note">Gateway IP is the LoRa gateway's local address for on-site diagnostics — the localization itself runs entirely over the mesh, with no internet or GPS dependency.</p>
+    </section>
+
+    <!-- LOG -->
+    <section class="panel log-panel">
+      <div class="panel-head">
+        <h2>Network Log</h2>
+        <span class="sub">AUTO-REFRESH</span>
+      </div>
+      <div class="log-body" id="logBody"></div>
+    </section>
+
+    <!-- HOW IT WORKS + FEATURES -->
+    <section class="lower">
+      <div class="panel steps">
+        <div class="step">
+          <span class="num">1</span>
+          <div>
+            <h3>Deploy</h3>
+            <p>Scatter four LoRa beacon nodes around the perimeter of the affected structure. No fixed infrastructure or site survey required.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">2</span>
+          <div>
+            <h3>Detect</h3>
+            <p>A handheld or wearable victim transmitter broadcasts a periodic LoRa ping. Every node in range logs its received signal strength.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">3</span>
+          <div>
+            <h3>Triangulate</h3>
+            <p>The network compares RSSI readings across all four nodes to estimate the transmitter's position and plots it on the grid in real time.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel features">
+        <div class="panel-head" style="border:none; padding:0 0 14px;">
+          <h2>Key Features</h2>
+        </div>
+        <ul>
+          <li><b>No GPS, no internet</b> — works entirely over the LoRa mesh, even where cell and satellite signal are gone.</li>
+          <li><b>Cooperative node network</b> — nodes relay and cross-check each other's readings instead of relying on a single receiver.</li>
+          <li><b>Signal-based localization</b> — position is estimated from RSSI alone, no line-of-sight or camera needed.</li>
+          <li><b>Low-cost, deployable</b> — built from commodity LoRa radios, fast to scatter across a debris field.</li>
+          <li><b>Built for disaster scenarios</b> — designed to hold up in collapsed structures and degraded environments.</li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <span class="tagline">Disasters may break structures. Not hope.</span>
+    <span class="meta">ECHOTAG // FIND · LOCATE · SAVE</span>
+  </footer>
+</div>
+
+<script>
+  // ---- Uptime clock ----
+  const start = Date.now();
+  const uptimeEl = document.getElementById('uptime');
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function tickUptime(){
+    const s = Math.floor((Date.now() - start)/1000);
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+    uptimeEl.textContent = `UPTIME ${pad(h)}:${pad(m)}:${pad(sec)}`;
+  }
+  setInterval(tickUptime, 1000);
+  tickUptime();
+
+  // ---- Scan clock ----
+  let lastScan = Date.now();
+  const scanClockEl = document.getElementById('scanClock');
+  setInterval(() => {
+    const secs = ((Date.now() - lastScan)/1000).toFixed(1);
+    scanClockEl.textContent = `last scan · ${secs}s ago`;
+  }, 200);
+
+  // ---- Simulated log feed ----
+  const logBody = document.getElementById('logBody');
+  const logTemplates = [
+    ['ok',   'Node 1 heartbeat received'],
+    ['ok',   'Node 2 heartbeat received'],
+    ['warn', 'Node 3 signal degraded — RSSI -93 dBm'],
+    ['ok',   'Node 4 heartbeat received'],
+    ['ok',   'Victim transmitter ping detected'],
+    ['ok',   'RSSI table synced across mesh'],
+    ['warn', 'Node 3 battery below 65%'],
+    ['ok',   'Position estimate recalculated'],
+  ];
+  function timeNow(){
+    const d = new Date();
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+  function pushLog(tag, msg){
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.innerHTML = `<span class="t">${timeNow()}</span><span class="tag ${tag}">[${tag.toUpperCase()}]</span><span>${msg}</span>`;
+    logBody.appendChild(line);
+    logBody.scrollTop = logBody.scrollHeight;
+  }
+  // seed a few lines
+  ['Mesh initialized — 4/4 nodes online','Node 2 heartbeat received','Node 1 heartbeat received','Victim transmitter ping detected'].forEach(m => pushLog('ok', m));
+
+  setInterval(() => {
+    const t = logTemplates[Math.floor(Math.random()*logTemplates.length)];
+    pushLog(t[0], t[1]);
+    lastScan = Date.now();
+  }, 3400);
+
+  // ---- Locate victim: triangulation animation ----
+  const locateBtn = document.getElementById('locateBtn');
+  const trilines = document.getElementById('trilines');
+  const zoneOut = document.getElementById('zoneOut');
+  const confOut = document.getElementById('confOut');
+  const gpsOut = document.getElementById('gpsOut');
+  const zones = ['ZONE B2','ZONE B2','ZONE A2','ZONE B1','ZONE C2'];
+
+  // Base reference point the demo nudges around — swap for a real site survey point.
+  const baseLat = 34.0522, baseLon = -118.2437;
+  function fmtCoord(val, posLabel, negLabel){
+    const label = val >= 0 ? posLabel : negLabel;
+    return `${Math.abs(val).toFixed(4)}°${label}`;
+  }
+  function jitterGps(){
+    const lat = baseLat + (Math.random()-0.5) * 0.0006;
+    const lon = baseLon + (Math.random()-0.5) * 0.0006;
+    gpsOut.textContent = `${fmtCoord(lat,'N','S')}, ${fmtCoord(lon,'E','W')}`;
+  }
+
+  locateBtn.addEventListener('click', () => {
+    locateBtn.disabled = true;
+    locateBtn.textContent = 'Triangulating…';
+    trilines.classList.add('active');
+    pushLog('ok', 'Triangulation requested — sampling all nodes');
+
+    setTimeout(() => {
+      const zone = zones[Math.floor(Math.random()*zones.length)];
+      const conf = 82 + Math.floor(Math.random()*13);
+      zoneOut.textContent = zone;
+      confOut.textContent = conf + '%';
+      jitterGps();
+      pushLog('ok', `Position resolved — ${zone} at ${conf}% confidence`);
+      locateBtn.disabled = false;
+      locateBtn.textContent = 'Locate victim';
+      trilines.classList.remove('active');
+    }, 1800);
+  });
+
+  // ---- Packet loss jitter ----
+  const packetLossEl = document.getElementById('packetLoss');
+  setInterval(() => {
+    const pl = (1 + Math.random()*3).toFixed(1);
+    packetLossEl.textContent = pl + '%';
+  }, 5000);
+</script>
+
+</body>
+</html>
